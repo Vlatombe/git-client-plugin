@@ -564,21 +564,74 @@ public abstract class GitAPITestCase extends TestCase {
         });
     }
 
-    @NotImplementedInJGit
     public void test_clone_refspecs() throws Exception {
-      List<RefSpec> refspecs = Lists.newArrayList(
-          new RefSpec("+refs/heads/master:refs/remotes/origin/master"),
-          new RefSpec("+refs/heads/1.4.x:refs/remotes/origin/1.4.x")
-      );
-      w.git.clone_().url(localMirror()).refspecs(refspecs).repositoryName("origin").execute();
-      w.git.withRepository(new RepositoryCallback<Void>() {
-        public Void invoke(Repository repo, VirtualChannel channel) throws IOException, InterruptedException {
-          String[] fetchRefSpecs = repo.getConfig().getStringList(ConfigConstants.CONFIG_REMOTE_SECTION, Constants.DEFAULT_REMOTE_NAME, "fetch");
-          assertEquals("Expected 2 refspecs", 2, fetchRefSpecs.length);
-          assertEquals("Incorrect refspec 1", "+refs/heads/master:refs/remotes/origin/master", fetchRefSpecs[0]);
-          assertEquals("Incorrect refspec 2", "+refs/heads/1.4.x:refs/remotes/origin/1.4.x", fetchRefSpecs[1]);
-          return null;
-        }});
+        final String masterRefspec = "+refs/heads/master:refs/remotes/origin/master";
+        final String r14xRefspec = "+refs/heads/1.4.x:refs/remotes/origin/1.4.x";
+        final List<RefSpec> refspecs = Lists.newArrayList(
+                new RefSpec(masterRefspec),
+                new RefSpec(r14xRefspec)
+        );
+        w.git.clone_().url(localMirror()).refspecs(refspecs).repositoryName("origin").execute();
+        w.git.withRepository(new RepositoryCallback<Void>() {
+            public Void invoke(Repository repo, VirtualChannel channel) throws IOException, InterruptedException {
+                String[] fetchRefSpecs = repo.getConfig().getStringList(ConfigConstants.CONFIG_REMOTE_SECTION, Constants.DEFAULT_REMOTE_NAME, "fetch");
+                assertTrue("Missing " + masterRefspec, Arrays.asList(fetchRefSpecs).contains(masterRefspec));
+                assertTrue("Missing " + r14xRefspec, Arrays.asList(fetchRefSpecs).contains(r14xRefspec));
+                assertEquals("Wrong refspec count", refspecs.size(), fetchRefSpecs.length);
+                return null;
+            }
+        });
+    }
+
+    public void test_clone_different_refspecs() throws Exception {
+        final String masterRefspec = "+refs/heads/master:refs/remotes/origin/master";
+        final String r14xRefspec = "+refs/heads/1.4.x:refs/remotes/origin/1.4.x";
+        final List<RefSpec> refspecsA = Lists.newArrayList(
+                new RefSpec(masterRefspec),
+                new RefSpec(r14xRefspec)
+        );
+        final List<RefSpec> refspecsB = Lists.newArrayList(
+                new RefSpec(r14xRefspec)
+        );
+        w.git.clone_().url(localMirror()).refspecs(refspecsA).repositoryName("origin").execute();
+        w.git.withRepository(new RepositoryCallback<Void>() {
+            public Void invoke(Repository repo, VirtualChannel channel) throws IOException, InterruptedException {
+                String[] fetchRefSpecs = repo.getConfig().getStringList(ConfigConstants.CONFIG_REMOTE_SECTION, Constants.DEFAULT_REMOTE_NAME, "fetch");
+                assertTrue("Missing " + r14xRefspec, Arrays.asList(fetchRefSpecs).contains(r14xRefspec));
+                assertTrue("Missing " + masterRefspec, Arrays.asList(fetchRefSpecs).contains(masterRefspec));
+                assertEquals("Wrong refspec count", refspecsA.size(), fetchRefSpecs.length);
+                return null;
+            }
+        });
+        w.git.clone_().url(localMirror()).refspecs(refspecsB).repositoryName("origin").execute();
+        w.git.withRepository(new RepositoryCallback<Void>() {
+            public Void invoke(Repository repo, VirtualChannel channel) throws IOException, InterruptedException {
+                String[] fetchRefSpecs = repo.getConfig().getStringList(ConfigConstants.CONFIG_REMOTE_SECTION, Constants.DEFAULT_REMOTE_NAME, "fetch");
+                assertTrue("Missing " + r14xRefspec, Arrays.asList(fetchRefSpecs).contains(r14xRefspec));
+                assertEquals("Wrong refspec count", refspecsB.size(), fetchRefSpecs.length);
+                return null;
+            }
+        });
+    }
+
+    public void test_fetch_refspecs() throws Exception {
+        final String masterRefspec = "+refs/heads/master:refs/remotes/origin/master";
+        final String r14xRefspec = "+refs/heads/1.4.x:refs/remotes/origin/1.4.x";
+        final List<RefSpec> refspecs = Lists.newArrayList(
+                new RefSpec(masterRefspec),
+                new RefSpec(r14xRefspec)
+        );
+        w.init();
+        w.git.fetch_().from(new URIish(localMirror()), refspecs).execute();
+        w.git.withRepository(new RepositoryCallback<Void>() {
+            public Void invoke(Repository repo, VirtualChannel channel) throws IOException, InterruptedException {
+                String[] fetchRefSpecs = repo.getConfig().getStringList(ConfigConstants.CONFIG_REMOTE_SECTION, Constants.DEFAULT_REMOTE_NAME, "fetch");
+                assertTrue("Missing " + masterRefspec, Arrays.asList(fetchRefSpecs).contains(masterRefspec));
+                assertTrue("Missing " + r14xRefspec, Arrays.asList(fetchRefSpecs).contains(r14xRefspec));
+                assertEquals("Wrong refspec count", refspecs.size(), fetchRefSpecs.length);
+                return null;
+            }
+        });
     }
 
     public void test_detect_commit_in_repo() throws Exception {
