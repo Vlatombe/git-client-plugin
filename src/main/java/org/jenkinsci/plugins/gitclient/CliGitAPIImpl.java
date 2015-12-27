@@ -1393,7 +1393,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                             UsernameCredentials userCredentials = (UsernameCredentials) credentials;
                             launchCommandIn(workDir, "config", "--local", "credential.username", userCredentials.getUsername());
                     }
-                    launchCommandIn(workDir, "config", "--local", "credential.helper", "store --file=" + fileStore);
+                    launchCommandIn(workDir, "config", "--local", "credential.helper", "store", "--file=" + fileStore);
                 }
 
                 if (proxy != null) {
