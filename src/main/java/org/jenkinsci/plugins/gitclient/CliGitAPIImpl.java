@@ -1643,6 +1643,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                 w.print(" -l \"" + user + "\"");
             }
             w.print(" -o StrictHostKeyChecking=no");
+            w.print(" -o BatchMode=yes");
             w.println(" %* ");
             w.flush();
         } finally {
@@ -1671,6 +1672,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
             w.print(" -l \"" + user + "\"");
         }
         w.print(" -o StrictHostKeyChecking=no");
+        w.print(" -o BatchMode=yes");
         w.println(" \"$@\" ");
         w.close();
         ssh.setExecutable(true);
