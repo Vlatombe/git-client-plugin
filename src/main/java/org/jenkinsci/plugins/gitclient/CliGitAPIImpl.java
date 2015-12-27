@@ -1361,7 +1361,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                 env.put("SSH_ASKPASS", pass.getAbsolutePath());
             }
 
-            if ("".equals(url.getScheme()) || "ssh".equals(url.getScheme())) {
+            if (url.getScheme() == null || "".equals(url.getScheme()) || "ssh".equals(url.getScheme())) {
                 if (launcher.isUnix()) {
                     ssh = createUnixGitSSH(key, user);
                 } else {
