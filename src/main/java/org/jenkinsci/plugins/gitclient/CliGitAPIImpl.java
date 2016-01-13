@@ -1391,18 +1391,17 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                     String fileStore = launcher.isUnix() ? store.getAbsolutePath() : "\\\"" + store.getAbsolutePath() + "\\\"";
                     if (credentials instanceof UsernameCredentials) {
                             UsernameCredentials userCredentials = (UsernameCredentials) credentials;
-                            if (userCredentials.getUsername().trim().isEmpty()) {
+                            if (!userCredentials.getUsername().isEmpty() && !userCredentials.getUsername().trim().isEmpty()) {
+                                launchCommandIn(workDir, "config", "--local", "credential.username", userCredentials.getUsername());
+                            } else {
                                 /* This is unexpected, yet it happens in my automated tests with a URL
                                  * with the user name embedded, but with a separate password. It is not
                                  * clear if that condition is possible from the user interface, since the
                                  * user interface may require a username in the credentials data
                                  * entry in addition to the password.
                                  */
-                                System.out.println("*** empty username for " + url + " ***");
-                                /* If there is no credential.username, unset it */
-                                launchCommandIn(workDir, "config", "--local", "--unset-all", "credential.username");
-                            } else {
-                                launchCommandIn(workDir, "config", "--local", "credential.username", userCredentials.getUsername());
+                                listener.getLogger().println("[WARNING] *** unexpected empty username for " + url + " ***");
+                                System.out.println("*** unexpected empty username for " + url + " ***");
                             }
                     }
                     launchCommandIn(workDir, "config", "--local", "credential.helper", "store", "--file=" + fileStore);
