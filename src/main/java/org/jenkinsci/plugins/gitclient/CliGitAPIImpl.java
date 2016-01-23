@@ -1404,7 +1404,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                                 System.out.println("*** unexpected empty username for " + url + " ***");
                             }
                     }
-                    launchCommandIn(workDir, "config", "--local", "credential.helper", "store", "--file=" + fileStore);
+                    launchCommandIn(workDir, "config", "--local", "credential.helper", "store --file=" + fileStore);
                 }
 
                 if (proxy != null) {
