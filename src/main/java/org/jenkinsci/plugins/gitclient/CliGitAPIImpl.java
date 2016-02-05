@@ -1340,31 +1340,35 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                                                 Integer timeout) throws GitException, InterruptedException {
 
         File key = null;
+        String user = null;
         File ssh = null;
         File pass = null;
         File store = null;
         EnvVars env = environment;
         boolean deleteWorkDir = false;
         try {
+            env = new EnvVars(env);
             if (credentials instanceof SSHUserPrivateKey) {
                 SSHUserPrivateKey sshUser = (SSHUserPrivateKey) credentials;
                 listener.getLogger().println("using GIT_SSH to set credentials " + sshUser.getDescription());
-
                 key = createSshKeyFile(key, sshUser);
+                user = sshUser.getUsername();
                 if (launcher.isUnix()) {
-                    ssh =  createUnixGitSSH(key, sshUser.getUsername());
                     pass =  createUnixSshAskpass(sshUser);
                 } else {
-                    ssh =  createWindowsGitSSH(key, sshUser.getUsername());
                     pass =  createWindowsSshAskpass(sshUser);
                 }
-
-                env = new EnvVars(env);
-                env.put("GIT_SSH", ssh.getAbsolutePath());
                 env.put("SSH_ASKPASS", pass.getAbsolutePath());
             }
 
-            if ("http".equalsIgnoreCase(url.getScheme()) || "https".equalsIgnoreCase(url.getScheme())) {
+            if (url.getScheme() == null || "".equals(url.getScheme()) || "ssh".equals(url.getScheme())) {
+                if (launcher.isUnix()) {
+                    ssh = createUnixGitSSH(key, user);
+                } else {
+                    ssh = createWindowsGitSSH(key, user);
+                }
+                env.put("GIT_SSH", ssh.getAbsolutePath());
+            } else if ("http".equalsIgnoreCase(url.getScheme()) || "https".equalsIgnoreCase(url.getScheme())) {
                 if (credentials != null) {
                     listener.getLogger().println("using .gitcredentials to set credentials");
                     if (!isAtLeastVersion(1,7,9,0))
@@ -1387,7 +1391,18 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                     String fileStore = launcher.isUnix() ? store.getAbsolutePath() : "\\\"" + store.getAbsolutePath() + "\\\"";
                     if (credentials instanceof UsernameCredentials) {
                             UsernameCredentials userCredentials = (UsernameCredentials) credentials;
-                            launchCommandIn(workDir, "config", "--local", "credential.username", userCredentials.getUsername());
+                            if (!userCredentials.getUsername().isEmpty() && !userCredentials.getUsername().trim().isEmpty()) {
+                                launchCommandIn(workDir, "config", "--local", "credential.username", userCredentials.getUsername());
+                            } else {
+                                /* This is unexpected, yet it happens in my automated tests with a URL
+                                 * with the user name embedded, but with a separate password. It is not
+                                 * clear if that condition is possible from the user interface, since the
+                                 * user interface may require a username in the credentials data
+                                 * entry in addition to the password.
+                                 */
+                                listener.getLogger().println("[WARNING] *** unexpected empty username for " + url + " ***");
+                                System.out.println("*** unexpected empty username for " + url + " ***");
+                            }
                     }
                     launchCommandIn(workDir, "config", "--local", "credential.helper", "store --file=" + fileStore);
                 }
@@ -1631,7 +1646,16 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         try {
             w = new PrintWriter(ssh);
             w.println("@echo off");
-            w.println("\"" + sshexe.getAbsolutePath() + "\" -i \"" + key.getAbsolutePath() +"\" -l \"" + user + "\" -o StrictHostKeyChecking=no %* ");
+            w.print("\"" + sshexe.getAbsolutePath() + "\"");
+            if (key != null) {
+                w.print(" -i \"" + key.getAbsolutePath() + "\"");
+            }
+            if (user != null) {
+                w.print(" -l \"" + user + "\"");
+            }
+            w.print(" -o StrictHostKeyChecking=no");
+            w.print(" -o BatchMode=yes");
+            w.println(" %* ");
             w.flush();
         } finally {
             if (w != null) {
@@ -1651,7 +1675,16 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         w.println("  DISPLAY=:123.456");
         w.println("  export DISPLAY");
         w.println("fi");
-        w.println("ssh -i \"" + key.getAbsolutePath() + "\" -l \"" + user + "\" -o StrictHostKeyChecking=no \"$@\"");
+        w.print("ssh");
+        if (key != null) {
+            w.print(" -i \"" + key.getAbsolutePath() + "\"");
+        }
+        if (user != null) {
+            w.print(" -l \"" + user + "\"");
+        }
+        w.print(" -o StrictHostKeyChecking=no");
+        w.print(" -o BatchMode=yes");
+        w.println(" \"$@\" ");
         w.close();
         ssh.setExecutable(true);
         return ssh;
@@ -1774,29 +1807,31 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
     }
 
     /**
-     * parseBranches.
+     * Parse branch name and SHA1 from "fos" argument string.
      *
-     * @param fos a {@link java.lang.String} object.
+     * Argument content must match "git branch -v --no-abbrev".
+     *
+     * One branch per line, two leading characters ignored on each
+     * line, the branch name (not allowed to contain spaces), one or
+     * more spaces, and the 40 character SHA1 of the commit that is
+     * the head of that branch. Text after the SHA1 is ignored.
+     *
+     * @param fos output of "git branch -v --no-abbrev"
      * @return a {@link java.util.Set} object.
-     * @throws hudson.plugins.git.GitException if underlying git operation fails.
-     * @throws java.lang.InterruptedException if interrupted.
      */
-    protected Set<Branch> parseBranches(String fos) throws GitException, InterruptedException {
-        // TODO: git branch -a -v --abbrev=0 would do this in one shot..
-
+    private Set<Branch> parseBranches(String fos) {
         Set<Branch> branches = new HashSet<Branch>();
-
         BufferedReader rdr = new BufferedReader(new StringReader(fos));
         String line;
         try {
             while ((line = rdr.readLine()) != null) {
-                // Ignore the 1st
-                line = line.substring(2);
-                // Ignore '(no branch)' or anything with " -> ", since I think
-                // that's just noise
-                if ((!line.startsWith("("))
-                    && (line.indexOf(" -> ") == -1)) {
-                    branches.add(new Branch(line, revParse(line)));
+                // Ignore leading 2 characters (marker for current branch)
+                // Ignore line if second field is not SHA1 length (40 characters)
+                // Split fields into branch name, SHA1, and rest of line
+                // Fields are separated by one or more spaces
+                String[] branchVerboseOutput = line.substring(2).split(" +", 3);
+                if (branchVerboseOutput[1].length() == 40) {
+                    branches.add(new Branch(branchVerboseOutput[0], ObjectId.fromString(branchVerboseOutput[1])));
                 }
             }
         } catch (IOException e) {
@@ -1816,7 +1851,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
      * @throws java.lang.InterruptedException if interrupted.
      */
     public Set<Branch> getBranches() throws GitException, InterruptedException {
-        return parseBranches(launchCommand("branch", "-a"));
+        return parseBranches(launchCommand("branch", "-a", "-v", "--no-abbrev"));
     }
 
     /**
@@ -2554,9 +2589,9 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
             throws GitException, InterruptedException {
         final String commandOutput;
         if (allBranches) {
-            commandOutput = launchCommand("branch", "-a", "--contains", revspec);
+            commandOutput = launchCommand("branch", "-a", "-v", "--no-abbrev", "--contains", revspec);
         } else {
-            commandOutput = launchCommand("branch", "--contains", revspec);
+            commandOutput = launchCommand("branch", "-v", "--no-abbrev", "--contains", revspec);
         }
         return new ArrayList<Branch>(parseBranches(commandOutput));
     }
